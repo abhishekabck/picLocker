@@ -1,0 +1,11 @@
+Library - required
+Syntax: pip install pillow
+
+import using -> from PIL import Image
+
+>>> from PIL import Image
+>>> im = Image.open("hopper.ppm")
+
+If successful, this function returns an Image object. You can now use instance attributes to examine the file contents:
+
+    
