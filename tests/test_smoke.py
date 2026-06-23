@@ -130,3 +130,17 @@ def test_search_absent_returns_empty(temp_db, monkeypatch):
         _seed(db, "x", v)
     assert search.search("anything") == []
 
+def test_near_dup_keep_policy(temp_db, stub_embed, sample_image, monkeypatch):
+    with get_db(temp_db) as db:
+        original_ivec = np.zeros(8, dtype=np.float32); original_ivec[0] = 1.0
+        similar_ivec = np.zeros(8, dtype=np.float32); similar_ivec[1] = 1.0
+        _seed(db, "original", original_ivec)
+        cid = db.execute("SELECT id FROM CONTENT").fetchone()[0]
+        monkeypatch.setattr("ingest.find_near_dup", lambda phash_hex=None, phash_map=None, threshold=None: (10, cid))
+        ingest.ingest_file(sample_image, policy="keep")
+
+        content_ = db.execute("SELECT id, dup_group, near_dup_distance FROM CONTENT").fetchall()
+        assert len(content_) == 2
+        assert content_[0][1] == content_[1][1]
+        assert content_[1][2] == 10.0
+

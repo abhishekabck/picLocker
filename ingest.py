@@ -178,12 +178,26 @@ def ingest_file(path, parent_id=None, policy=None):
                     path, distance, content_id,
                 )
             else:
+                content_id = create_and_upload_content(db, facts)
                 if near is not None:
                     log.info(
                         "near-dup path=%s distance=%s kept as own content (policy=keep)",
                         path, near[0],
                     )
-                content_id = create_and_upload_content(db, facts)
+                    distance, matched_id = near
+                    row = db.execute(
+                        "SELECT dup_group FROM CONTENT WHERE id = ?",
+                        [matched_id]
+                    ).fetchall()
+                    if row is None:
+                        dup_group = matched_id
+                    else:
+                        dup_group = row[0][0]
+                    db.execute(
+                        "UPDATE CONTENT SET dup_group = ?, near_dup_distance = ? WHERE id = ?",
+                        [dup_group, distance, content_id]
+                    )
+                db.commit()
                 image_type = "ORIGINAL"
 
         upsert_file_row(db, facts, image_type, content_id, parent_id)

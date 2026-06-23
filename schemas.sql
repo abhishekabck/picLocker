@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS CONTENT (
     s3_path TEXT,
     thumbnail_path TEXT,
     embedding BLOB,
+    dup_group INTEGER,
+    near_dup_distance INTEGER,
     status VARCHAR(10) NOT NULL DEFAULT 'PENDING',
     CHECK(status in ('PENDING', 'UPLOADING', 'UPLOADED', 'INDEXING', 'INDEXED', 'ERROR'))
 );
@@ -64,3 +66,4 @@ CREATE INDEX IF NOT EXISTS idx_multipart_etags_upload_id ON MULTIPART_ETAGS(mult
 CREATE INDEX IF NOT EXISTS idx_files_sha256 ON FILES(sha256_hex);
 CREATE INDEX IF NOT EXISTS idx_files_content_id ON FILES(content_id);
 CREATE INDEX IF NOT EXISTS idx_content_status ON CONTENT(status);
+CREATE INDEX IF NOT EXISTS idx_content_dup_group ON CONTENT(dup_group);
