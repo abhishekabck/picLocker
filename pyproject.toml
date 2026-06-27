@@ -12,6 +12,7 @@ dependencies = [
     "pillow>=12.2.0",
     "requests>=2.34.2",
     "sentence-transformers>=5.5.1",
+    "watchdog>=6.0.0",
 ]
 
 [dependency-groups]

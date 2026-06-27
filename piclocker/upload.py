@@ -1,10 +1,10 @@
 import sqlite3
-import config
-from s3_client import get_s3
-from facts import FileFacts
 from datetime import datetime, timezone
-
 import logging
+
+from piclocker import config
+from piclocker.s3_client import get_s3
+from piclocker.facts import FileFacts
 
 log = logging.getLogger("piclocker.upload")
 
@@ -22,14 +22,10 @@ def create_and_upload_content(db, facts: FileFacts) -> int:
         ).lastrowid
         db.commit()
     except sqlite3.IntegrityError:
-        # content row already exists: a finished dup -> return; an interrupted
-        # upload (non-terminal status) -> fall through and resume it.
         content_id, status = db.execute(
             "SELECT id, status FROM CONTENT WHERE sha256_hex = ?",
             [facts.sha256],
         ).fetchone()
-
-
         if status in ('UPLOADED', 'INDEXED', 'INDEXING'):
             return content_id
 
@@ -50,7 +46,8 @@ def create_and_upload_content(db, facts: FileFacts) -> int:
     log.info("uploaded content_id=%s key=%s bytes=%s", content_id, facts.s3_key, facts.size)
     return content_id
 
-def upload_single_content(db, content_id: int, facts: FileFacts,):
+
+def upload_single_content(db, content_id: int, facts: FileFacts):
     get_s3().put_object(
         Bucket=config.PS3_BUCKET,
         Key=facts.s3_key,
@@ -62,18 +59,18 @@ def upload_single_content(db, content_id: int, facts: FileFacts,):
 
 def __create_multipart_upload_record(db, content_id: int, facts: FileFacts) -> int:
     multipart_id = db.execute(
-        "INSERT INTO MULTIPART_UPLOADS (content_id, total_size) "
-        "VALUES (?, ?)",
+        "INSERT INTO MULTIPART_UPLOADS (content_id, total_size) VALUES (?, ?)",
         [content_id, facts.size]
     ).lastrowid
     db.commit()
     return multipart_id
 
+
 def __fresh_multipart_upload(db, content_id: int, facts: FileFacts, upload_id=None, multipart_id=None):
     if multipart_id is None:
         multipart_id = __create_multipart_upload_record(db, content_id, facts)
     log.info("initiated multipart upload content_id=%s key=%s", content_id, facts.s3_key)
-    db.execute("UPDATE MULTIPART_UPLOADS SET status = 'UPLOADING' where id = ?",[multipart_id])
+    db.execute("UPDATE MULTIPART_UPLOADS SET status = 'UPLOADING' where id = ?", [multipart_id])
 
     if upload_id is None:
         upload_id = get_s3().create_multipart_upload(
@@ -103,18 +100,16 @@ def __fresh_multipart_upload(db, content_id: int, facts: FileFacts, upload_id=No
             continue
         if non_uploaded_pn.get(index) is None:
             etag_id = db.execute(
-                "INSERT INTO MULTIPART_ETAGS (multipart_upload_id, part_number) "
-                "VALUES (?, ?)",
+                "INSERT INTO MULTIPART_ETAGS (multipart_upload_id, part_number) VALUES (?, ?)",
                 [multipart_id, index]
             ).lastrowid
             db.commit()
         else:
             etag_id = non_uploaded_pn[index]
-        db.execute(
-            "UPDATE MULTIPART_ETAGS SET upload_status = 'UPLOADING' WHERE id = ?",
-            [etag_id]
-        )
+
+        db.execute("UPDATE MULTIPART_ETAGS SET upload_status = 'UPLOADING' WHERE id = ?", [etag_id])
         db.commit()
+
         etag = get_s3().upload_part(
             Bucket=config.PS3_BUCKET,
             Key=facts.s3_key,
@@ -124,42 +119,38 @@ def __fresh_multipart_upload(db, content_id: int, facts: FileFacts, upload_id=No
         ).get("ETag", None)
 
         if etag is None:
-            db.execute("UPDATE MULTIPART_ETAGS "
-                       "SET upload_status = 'ERROR' WHERE id = ?", [etag_id])
+            db.execute("UPDATE MULTIPART_ETAGS SET upload_status = 'ERROR' WHERE id = ?", [etag_id])
             db.commit()
             raise Exception("Failed to upload part")
 
         part_size = min(config.MULTIPART_CHUNK_SIZE, len(facts.data) - i)
         db.execute(
-            "UPDATE MULTIPART_ETAGS "
-            "SET upload_status = 'UPLOADED', part_etag = ?, part_size = ? "
-            "WHERE id = ?",
+            "UPDATE MULTIPART_ETAGS SET upload_status = 'UPLOADED', part_etag = ?, part_size = ? WHERE id = ?",
             [etag, part_size, etag_id]
         )
         db.commit()
         if index in non_uploaded_pn:
             del non_uploaded_pn[index]
-        log.info("uploaded multipart content_id=%s key=%s part=%s", content_id, facts.s3_key, index)
+        log.info("uploaded part content_id=%s key=%s part=%s", content_id, facts.s3_key, index)
 
     parts = [
         {"PartNumber": pn, "ETag": etag} for pn, etag in db.execute(
             "SELECT part_number, part_etag FROM MULTIPART_ETAGS "
-            "WHERE multipart_upload_id = ? ORDER BY part_number", [multipart_id])]
-
+            "WHERE multipart_upload_id = ? ORDER BY part_number", [multipart_id]
+        )
+    ]
     get_s3().complete_multipart_upload(
         Bucket=config.PS3_BUCKET,
         Key=facts.s3_key,
         UploadId=upload_id,
         MultipartUpload={"Parts": parts},
     )
-    db.execute("UPDATE MULTIPART_UPLOADS SET status = 'UPLOADED' where id = ?",
-               [multipart_id])
+    db.execute("UPDATE MULTIPART_UPLOADS SET status = 'UPLOADED' where id = ?", [multipart_id])
     db.commit()
     log.info("completed multipart content_id=%s key=%s", content_id, facts.s3_key)
 
 
-def upload_multipart_content(db,content_id: int, facts: FileFacts):
-    # checking whether the content was being uploaded.
+def upload_multipart_content(db, content_id: int, facts: FileFacts):
     row = db.execute(
         "SELECT id, upload_id, status from MULTIPART_UPLOADS WHERE content_id = ? and initiated_at > datetime('now', ?)",
         [content_id, config.MULTIPART_UPLOAD_TIME_LIMIT]
@@ -174,4 +165,3 @@ def upload_multipart_content(db,content_id: int, facts: FileFacts):
             __fresh_multipart_upload(db, content_id, facts)
         else:
             __fresh_multipart_upload(db, content_id, facts, upload_id=upload_id, multipart_id=multipart_id)
-

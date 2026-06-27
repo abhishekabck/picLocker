@@ -1,15 +1,20 @@
-import logging, time, config
+import logging
+import time
+
 import numpy as np
-from embeddings import encode_text
-from db import get_db
+
+from piclocker import config
+from piclocker.db import get_db
+from piclocker.embeddings import encode_text
 
 log = logging.getLogger("piclocker.search")
 
+
 def search(query, k=20):
     t0 = time.perf_counter()
-    q = encode_text(query)             # cold CLI: triggers the one-time model load
+    q = encode_text(query)
     q = q / np.linalg.norm(q)
-    t_embed = time.perf_counter()      # everything past here is the actual search
+    t_embed = time.perf_counter()
 
     with get_db(config.DB_PATH) as conn:
         rows = conn.execute(
@@ -33,9 +38,6 @@ def search(query, k=20):
         if scores[i] >= config.similarity_threshold
     ]
 
-    # embed_ms is dominated by the one-time model load on a cold process;
-    # search_ms (DB load + matmul + rank) is the number that maps to the
-    # "< 200 ms" requirement, measured warm.
     log.info(
         "search query=%r candidates=%d results=%d top=%.3f embed=%.0fms search=%.1fms",
         query, len(rows), len(results),

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import imagehash
 from PIL import Image
-import config
+from piclocker import config
 
 
 @dataclass
@@ -38,4 +38,3 @@ def gather_facts(path: Path) -> FileFacts:
         disk_mtime=stat.st_mtime,
         mime=mime or "application/octet-stream",
     )
-

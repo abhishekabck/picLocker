@@ -1,12 +1,14 @@
 import math
 import numpy as np
-import config, upload, ingest
-from db import get_db
 import pytest
 import shutil
-import search
 import hashlib
+from PIL import Image
 
+from piclocker import config
+from piclocker import upload, ingest, search
+from piclocker.db import get_db
+from piclocker.stats import get_stats
 
 def test_fixtures_wire(temp_db, mock_s3, stub_embed):
     assert config.DB_PATH == temp_db and temp_db.exists()      # temp_db repointed + schema built
@@ -52,7 +54,6 @@ def test_input_fixtures(sample_image, make_facts):
     from PIL import Image
     assert sample_image.exists()
     assert Image.open(sample_image).size == (16, 16)        # valid, decodable
-    import config
     f = make_facts(b"x" * (config.SINGLE_FILE_THRESHOLD + 1))
     assert f.size == config.SINGLE_FILE_THRESHOLD + 1 and len(f.sha256) == 64
     assert f.s3_key.startswith("photos/")                   # derived property still works
@@ -108,7 +109,7 @@ def _seed(db, name, vec):
 
 def test_search_ranks_and_thresholds(temp_db, monkeypatch):
     q = np.zeros(8, dtype=np.float32); q[0] = 1.0
-    monkeypatch.setattr("search.encode_text", lambda text: q)
+    monkeypatch.setattr("piclocker.search.encode_text", lambda text: q)
 
     with get_db(temp_db) as db:
         aligned = np.zeros(8, dtype=np.float32); aligned[0] = 1.0
@@ -124,23 +125,49 @@ def test_search_ranks_and_thresholds(temp_db, monkeypatch):
 
 def test_search_absent_returns_empty(temp_db, monkeypatch):
     q = np.zeros(8, dtype=np.float32); q[7] = 1.0
-    monkeypatch.setattr("search.encode_text", lambda text: q)
+    monkeypatch.setattr("piclocker.search.encode_text", lambda text: q)
     with get_db(temp_db) as db:
         v = np.zeros(8, dtype=np.float32); v[0] = 1.0
         _seed(db, "x", v)
     assert search.search("anything") == []
 
-def test_near_dup_keep_policy(temp_db, stub_embed, sample_image, monkeypatch):
+def test_near_dup_keep_policy_groups_original_and_new(
+    temp_db, stub_embed, mock_s3, sample_image, monkeypatch
+):
+    cid_original = ingest.ingest_file(sample_image)
+
+    variant = sample_image.parent / "variant.png"
+    image = Image.open(sample_image).convert("RGB")
+    image.putpixel((0, 0), (124, 50, 200))
+    image.save(variant)
+
+    monkeypatch.setattr(
+        "piclocker.ingest.find_near_dup",
+        lambda phash_hex=None, phash_map=None, threshold=None: (10, cid_original),
+    )
+    cid_variant = ingest.ingest_file(variant, policy="keep")
+
     with get_db(temp_db) as db:
-        original_ivec = np.zeros(8, dtype=np.float32); original_ivec[0] = 1.0
-        similar_ivec = np.zeros(8, dtype=np.float32); similar_ivec[1] = 1.0
-        _seed(db, "original", original_ivec)
-        cid = db.execute("SELECT id FROM CONTENT").fetchone()[0]
-        monkeypatch.setattr("ingest.find_near_dup", lambda phash_hex=None, phash_map=None, threshold=None: (10, cid))
-        ingest.ingest_file(sample_image, policy="keep")
+        rows = db.execute(
+            "SELECT id, dup_group, near_dup_distance FROM CONTENT ORDER BY id"
+        ).fetchall()
 
-        content_ = db.execute("SELECT id, dup_group, near_dup_distance FROM CONTENT").fetchall()
-        assert len(content_) == 2
-        assert content_[0][1] == content_[1][1]
-        assert content_[1][2] == 10.0
+    assert cid_original != cid_variant
+    assert len(rows) == 2
+    assert rows[0][1] == cid_original
+    assert rows[1][1] == cid_original
+    assert rows[1][2] == 10
 
+
+def test_stats_empty(temp_db):
+    s = get_stats(temp_db)
+    assert s["total_content"] == 0
+    assert s["stored_bytes"] == 0
+
+def test_stats_after_ingest(temp_db, stub_embed, mock_s3, sample_image):
+    ingest.ingest_file(sample_image)
+    s = get_stats(temp_db)
+    assert s["total_content"] == 1
+    assert s["total_files"] == 1
+    assert s["dupes"] == 0
+    assert s["indexed"] == 1

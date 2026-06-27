@@ -21,9 +21,9 @@ import hashlib
 import pytest
 from PIL import Image
 
-import config
-from db import ensure_db
-from facts import FileFacts
+from piclocker import config
+from piclocker.db import ensure_db
+from piclocker.facts import FileFacts
 from _stubs import S3Stub, stub_embedding
 
 
@@ -47,7 +47,7 @@ def mock_s3(monkeypatch):
     can flip `mock_s3.offline = True` to simulate a network failure.
     """
     stub = S3Stub()
-    monkeypatch.setattr("upload.get_s3", lambda: stub)
+    monkeypatch.setattr("piclocker.upload.get_s3", lambda: stub)
     return stub
 
 
@@ -60,8 +60,8 @@ def stub_embed(monkeypatch):
     - ingest.get_model -> no-op (sync_folder pre-warms the model; without this it
       would download/load the real 600MB CLIP).
     """
-    monkeypatch.setattr("ingest.get_embedding", lambda image=None: stub_embedding())
-    monkeypatch.setattr("ingest.get_model", lambda: None)
+    monkeypatch.setattr("piclocker.ingest.get_embedding", lambda image=None: stub_embedding())
+    monkeypatch.setattr("piclocker.ingest.get_model", lambda: None)
 
 
 @pytest.fixture

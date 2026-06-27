@@ -4,8 +4,7 @@ import logging
 
 import boto3
 from botocore.config import Config
-
-import config
+from piclocker import config
 
 log = logging.getLogger("piclocker.s3")
 
@@ -30,3 +29,11 @@ def get_s3():
             ),
         )
     return _client
+
+
+def presign_url(s3_key: str, expires: int = 3600) -> str:
+    return get_s3().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": config.PS3_BUCKET, "Key": s3_key},
+        ExpiresIn=expires,
+    )

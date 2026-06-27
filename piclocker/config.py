@@ -15,7 +15,7 @@ PS3_BUCKET = os.getenv("PS3_BUCKET")
 # Object keys are content-addressed: photos/<sha256>
 S3_KEY_TEMPLATE = os.getenv("S3_KEY", "photos/{}")
 
-DB_PATH = Path(__file__).parent / os.getenv("PICLOCKER_DB", "piclocker.db")
+DB_PATH = Path(__file__).parent.parent / os.getenv("PICLOCKER_DB", "piclocker.db")
 
 # Near-duplicate handling (global policy, §8: decided once, not per file)
 #   keep    -> near-dup is uploaded as its own content (no data loss)
@@ -30,7 +30,6 @@ IMAGE_EXTENSIONS = {
 ORPHAN_FOLDER_PATH = "/"
 ORPHAN_FOLDER_TITLE = "Orphan Files"
 
-# Models
 CLIP_MODEL = os.getenv("PICLOCKER_MODEL", "sentence-transformers/clip-ViT-B-32")
 
 similarity_threshold = 0.22

@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_PATH = Path(__file__).parent / "schemas.sql"
+SCHEMA_PATH = Path(__file__).parent.parent / "schemas.sql"
 
 
 @contextmanager
@@ -29,8 +29,3 @@ def ensure_db(db_path):
     """Idempotent: schemas.sql is all CREATE IF NOT EXISTS."""
     with get_db(db_path) as conn:
         init_db(conn)
-
-
-if __name__ == "__main__":
-    import config
-    ensure_db(config.DB_PATH)

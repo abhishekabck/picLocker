@@ -101,6 +101,9 @@ source of truth, not duplicated here.
 
 ### Q5 — Concurrency unit for ingest?
 - **Decision:** pipeline (stage-per-worker), three lanes — see §2.
+- **Caveat:** near-dup grouping is best-effort under parallel sync. Two
+  lookalikes ingested concurrently can each read the dedup map before the other
+  commits, so they may land as separate roots until a later reconciliation step.
 
 > ✍️ TODO (you): covered in §2's TODO — make sure the failure-isolation
 > comparison (per-file vs. per-batch vs. pipeline) is written down here or there.
